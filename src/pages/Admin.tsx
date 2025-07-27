@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Plus, Edit, Trash2, Save, X } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, Trash2, Save, X, Youtube, ExternalLink } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { brandedCampaignsDatabase } from '@/data/contentDatabase';
 
-// Schemas for form validation
+// Enhanced schemas with YouTube support
 const seriesSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   season: z.string().min(1, 'Season is required'),
@@ -25,7 +25,9 @@ const seriesSchema = z.object({
   description: z.string().optional(),
   pillar: z.enum(['Roots', 'Culture', 'Latina', 'Queer']).optional(),
   isNew: z.boolean().optional(),
-  contentType: z.enum(['Series', 'Special', 'LatiNation Campaign', 'Tentpole Campaign', 'Branded Content Campaign']).optional()
+  contentType: z.enum(['Series', 'Special', 'LatiNation Campaign', 'Tentpole Campaign', 'Branded Content Campaign']).optional(),
+  youtubeUrl: z.string().url().optional().or(z.literal('')),
+  youtubeThumbnail: z.string().optional()
 });
 
 const campaignSchema = z.object({
@@ -34,7 +36,9 @@ const campaignSchema = z.object({
   overview: z.string().min(1, 'Overview is required'),
   platforms: z.string().min(1, 'Platforms are required'),
   deliverables: z.string().min(1, 'Deliverables are required'),
-  contentType: z.enum(['LatiNation Campaign', 'Tentpole Campaign', 'Branded Content Campaign', 'Series', 'Special']).optional()
+  contentType: z.enum(['LatiNation Campaign', 'Tentpole Campaign', 'Branded Content Campaign', 'Series', 'Special']).optional(),
+  youtubeUrl: z.string().url().optional().or(z.literal('')),
+  youtubeThumbnail: z.string().optional()
 });
 
 const brandedCampaignSchema = z.object({
@@ -43,12 +47,62 @@ const brandedCampaignSchema = z.object({
   description: z.string().min(1, 'Description is required'),
   deliverables: z.string().min(1, 'Deliverables are required'),
   campaignType: z.string().min(1, 'Campaign type is required'),
-  contentType: z.enum(['Branded Content Campaign', 'LatiNation Campaign', 'Tentpole Campaign', 'Series', 'Special']).optional()
+  contentType: z.enum(['Branded Content Campaign', 'LatiNation Campaign', 'Tentpole Campaign', 'Series', 'Special']).optional(),
+  youtubeUrl: z.string().url().optional().or(z.literal('')),
+  youtubeThumbnail: z.string().optional()
 });
 
 type SeriesFormData = z.infer<typeof seriesSchema>;
 type CampaignFormData = z.infer<typeof campaignSchema>;
 type BrandedCampaignFormData = z.infer<typeof brandedCampaignSchema>;
+
+// YouTube utility functions
+const extractYouTubeVideoId = (url: string): string | null => {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+};
+
+const getYouTubeThumbnail = (videoId: string): string => {
+  return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+};
+
+const getYouTubeEmbedUrl = (videoId: string): string => {
+  return `https://www.youtube.com/embed/${videoId}`;
+};
+
+// YouTube Preview Component
+const YouTubePreview: React.FC<{ url: string; className?: string }> = ({ url, className = "" }) => {
+  const videoId = extractYouTubeVideoId(url);
+  
+  if (!videoId) return null;
+
+  return (
+    <div className={`relative group ${className}`}>
+      <img 
+        src={getYouTubeThumbnail(videoId)} 
+        alt="YouTube thumbnail" 
+        className="w-full h-32 object-cover rounded-lg border-2 border-gray-300"
+        onError={(e) => {
+          // Fallback to default thumbnail if maxres fails
+          e.currentTarget.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+        }}
+      />
+      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
+        <Youtube className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+      </div>
+      <a 
+        href={url} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="absolute top-2 right-2 bg-red-600 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+      >
+        <ExternalLink className="w-4 h-4" />
+      </a>
+    </div>
+  );
+};
 
 const Admin = () => {
   const { toast } = useToast();
@@ -57,7 +111,7 @@ const Admin = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
 
-  // Form instances
+  // Form instances with enhanced YouTube support
   const seriesForm = useForm<SeriesFormData>({
     resolver: zodResolver(seriesSchema),
     defaultValues: {
@@ -67,7 +121,9 @@ const Admin = () => {
       episodesAnnually: '',
       description: '',
       isNew: false,
-      contentType: 'Series'
+      contentType: 'Series',
+      youtubeUrl: '',
+      youtubeThumbnail: ''
     }
   });
 
@@ -79,7 +135,9 @@ const Admin = () => {
       overview: '',
       platforms: '',
       deliverables: '',
-      contentType: 'LatiNation Campaign'
+      contentType: 'LatiNation Campaign',
+      youtubeUrl: '',
+      youtubeThumbnail: ''
     }
   });
 
@@ -91,9 +149,38 @@ const Admin = () => {
       description: '',
       deliverables: '',
       campaignType: '',
-      contentType: 'Branded Content Campaign'
+      contentType: 'Branded Content Campaign',
+      youtubeUrl: '',
+      youtubeThumbnail: ''
     }
   });
+
+  // Auto-generate thumbnail when YouTube URL changes
+  const watchYouTubeUrl = (url: string, form: any) => {
+    const videoId = extractYouTubeVideoId(url);
+    if (videoId) {
+      form.setValue('youtubeThumbnail', getYouTubeThumbnail(videoId));
+    } else {
+      form.setValue('youtubeThumbnail', '');
+    }
+  };
+
+  // Watch for YouTube URL changes
+  const seriesYouTubeUrl = seriesForm.watch('youtubeUrl');
+  const campaignYouTubeUrl = campaignForm.watch('youtubeUrl');
+  const brandedYouTubeUrl = brandedForm.watch('youtubeUrl');
+
+  useEffect(() => {
+    if (seriesYouTubeUrl) watchYouTubeUrl(seriesYouTubeUrl, seriesForm);
+  }, [seriesYouTubeUrl]);
+
+  useEffect(() => {
+    if (campaignYouTubeUrl) watchYouTubeUrl(campaignYouTubeUrl, campaignForm);
+  }, [campaignYouTubeUrl]);
+
+  useEffect(() => {
+    if (brandedYouTubeUrl) watchYouTubeUrl(brandedYouTubeUrl, brandedForm);
+  }, [brandedYouTubeUrl]);
 
   // Content stats
   const stats = {
@@ -103,9 +190,9 @@ const Admin = () => {
     brandedCampaigns: brandedCampaignsDatabase.length,
   };
 
-  // Form submission handlers
+  // Enhanced form submission handlers
   const onSeriesSubmit = (data: SeriesFormData) => {
-    console.log('Series data:', data);
+    console.log('Series data with YouTube:', data);
     toast({
       title: editingId ? "Series Updated" : "Series Added",
       description: `${data.title} has been ${editingId ? 'updated' : 'added'} successfully.`,
@@ -116,7 +203,7 @@ const Admin = () => {
   };
 
   const onCampaignSubmit = (data: CampaignFormData) => {
-    console.log('Campaign data:', data);
+    console.log('Campaign data with YouTube:', data);
     toast({
       title: editingId ? "Campaign Updated" : "Campaign Added",
       description: `${data.title} has been ${editingId ? 'updated' : 'added'} successfully.`,
@@ -127,7 +214,7 @@ const Admin = () => {
   };
 
   const onBrandedSubmit = (data: BrandedCampaignFormData) => {
-    console.log('Branded campaign data:', data);
+    console.log('Branded campaign data with YouTube:', data);
     toast({
       title: editingId ? "Campaign Updated" : "Campaign Added",
       description: `${data.title} has been ${editingId ? 'updated' : 'added'} successfully.`,
@@ -137,7 +224,7 @@ const Admin = () => {
     setShowAddForm(false);
   };
 
-  // Edit handlers
+  // Enhanced edit handlers with YouTube support
   const editSeries = (series: any) => {
     seriesForm.reset({
       title: series.title,
@@ -147,7 +234,9 @@ const Admin = () => {
       description: series.description || '',
       pillar: series.pillar,
       isNew: series.isNew || false,
-      contentType: series.contentType || 'Series'
+      contentType: series.contentType || 'Series',
+      youtubeUrl: series.youtubeUrl || '',
+      youtubeThumbnail: series.youtubeThumbnail || ''
     });
     setEditingId(series.id);
     setShowAddForm(true);
@@ -161,7 +250,9 @@ const Admin = () => {
       overview: campaign.overview,
       platforms: campaign.platforms,
       deliverables: campaign.deliverables,
-      contentType: campaign.contentType || 'LatiNation Campaign'
+      contentType: campaign.contentType || 'LatiNation Campaign',
+      youtubeUrl: campaign.youtubeUrl || '',
+      youtubeThumbnail: campaign.youtubeThumbnail || ''
     });
     setEditingId(campaign.id);
     setShowAddForm(true);
@@ -175,7 +266,9 @@ const Admin = () => {
       description: campaign.description,
       deliverables: campaign.deliverables,
       campaignType: campaign.campaignType,
-      contentType: campaign.contentType || 'Branded Content Campaign'
+      contentType: campaign.contentType || 'Branded Content Campaign',
+      youtubeUrl: campaign.youtubeUrl || '',
+      youtubeThumbnail: campaign.youtubeThumbnail || ''
     });
     setEditingId(campaign.id);
     setShowAddForm(true);
@@ -200,6 +293,7 @@ const Admin = () => {
     brandedForm.reset();
   };
 
+  // Enhanced form renderers with YouTube support
   const renderSeriesForm = () => (
     <form onSubmit={seriesForm.handleSubmit(onSeriesSubmit)} className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -267,6 +361,29 @@ const Admin = () => {
           <Label htmlFor="isNew">New Content</Label>
         </div>
       </div>
+      
+      {/* YouTube URL Field */}
+      <div>
+        <Label htmlFor="youtubeUrl" className="flex items-center gap-2">
+          <Youtube className="w-4 h-4 text-red-600" />
+          YouTube URL (Optional)
+        </Label>
+        <Input 
+          {...seriesForm.register('youtubeUrl')} 
+          placeholder="https://www.youtube.com/watch?v=..." 
+          className="mt-1"
+        />
+        {seriesForm.formState.errors.youtubeUrl && (
+          <p className="text-sm text-destructive">{seriesForm.formState.errors.youtubeUrl.message}</p>
+        )}
+        {seriesYouTubeUrl && extractYouTubeVideoId(seriesYouTubeUrl) && (
+          <div className="mt-2">
+            <Label className="text-sm text-muted-foreground">Preview:</Label>
+            <YouTubePreview url={seriesYouTubeUrl} className="mt-1" />
+          </div>
+        )}
+      </div>
+
       <div>
         <Label htmlFor="description">Description</Label>
         <Textarea {...seriesForm.register('description')} placeholder="Content description" rows={4} />
@@ -329,6 +446,29 @@ const Admin = () => {
           </Select>
         </div>
       </div>
+
+      {/* YouTube URL Field */}
+      <div>
+        <Label htmlFor="youtubeUrl" className="flex items-center gap-2">
+          <Youtube className="w-4 h-4 text-red-600" />
+          YouTube URL (Optional)
+        </Label>
+        <Input 
+          {...campaignForm.register('youtubeUrl')} 
+          placeholder="https://www.youtube.com/watch?v=..." 
+          className="mt-1"
+        />
+        {campaignForm.formState.errors.youtubeUrl && (
+          <p className="text-sm text-destructive">{campaignForm.formState.errors.youtubeUrl.message}</p>
+        )}
+        {campaignYouTubeUrl && extractYouTubeVideoId(campaignYouTubeUrl) && (
+          <div className="mt-2">
+            <Label className="text-sm text-muted-foreground">Preview:</Label>
+            <YouTubePreview url={campaignYouTubeUrl} className="mt-1" />
+          </div>
+        )}
+      </div>
+
       <div>
         <Label htmlFor="overview">Overview</Label>
         <Textarea {...campaignForm.register('overview')} placeholder="Campaign overview" rows={3} />
@@ -403,6 +543,29 @@ const Admin = () => {
           )}
         </div>
       </div>
+
+      {/* YouTube URL Field */}
+      <div>
+        <Label htmlFor="youtubeUrl" className="flex items-center gap-2">
+          <Youtube className="w-4 h-4 text-red-600" />
+          YouTube URL (Optional)
+        </Label>
+        <Input 
+          {...brandedForm.register('youtubeUrl')} 
+          placeholder="https://www.youtube.com/watch?v=..." 
+          className="mt-1"
+        />
+        {brandedForm.formState.errors.youtubeUrl && (
+          <p className="text-sm text-destructive">{brandedForm.formState.errors.youtubeUrl.message}</p>
+        )}
+        {brandedYouTubeUrl && extractYouTubeVideoId(brandedYouTubeUrl) && (
+          <div className="mt-2">
+            <Label className="text-sm text-muted-foreground">Preview:</Label>
+            <YouTubePreview url={brandedYouTubeUrl} className="mt-1" />
+          </div>
+        )}
+      </div>
+
       <div>
         <Label htmlFor="description">Description</Label>
         <Textarea {...brandedForm.register('description')} placeholder="Campaign description" rows={3} />
@@ -441,6 +604,7 @@ const Admin = () => {
               Back to Calendar
             </Link>
             <h1 className="text-3xl md:text-4xl font-black uppercase">Content Management</h1>
+            <p className="text-primary-foreground/80 mt-2">Now with YouTube Integration! 🎥</p>
           </div>
         </div>
 
@@ -513,8 +677,9 @@ const Admin = () => {
           {showAddForm && (
             <Card className="brutalist-card mb-8">
               <CardHeader>
-                <CardTitle className="font-black uppercase">
+                <CardTitle className="font-black uppercase flex items-center gap-2">
                   {editingId ? 'Edit' : 'Add New'} {activeSection === 'series' ? 'Series' : activeSection === 'campaigns' ? 'Campaign' : 'Branded Campaign'}
+                  <Youtube className="w-5 h-5 text-red-600" />
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -525,34 +690,63 @@ const Admin = () => {
             </Card>
           )}
 
-          {/* Content Lists */}
+          {/* Content Lists with YouTube Previews */}
           <div className="space-y-4">
             {activeSection === 'series' && allSeries.map((series) => (
               <Card key={series.id} className="brutalist-card">
                 <CardContent className="p-4">
-                  <div className="flex justify-between items-start">
+                  <div className="flex flex-col lg:flex-row gap-4">
+                    {/* YouTube Preview if available */}
+                    {series.youtubeUrl && (
+                      <div className="lg:w-48 flex-shrink-0">
+                        <YouTubePreview url={series.youtubeUrl} />
+                      </div>
+                    )}
+                    
+                    {/* Content Details */}
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="font-black uppercase text-lg">{series.title}</h3>
-                        {series.isNew && <Badge variant="secondary">New</Badge>}
-                        {series.pillar && <Badge variant="outline">{series.pillar}</Badge>}
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <h3 className="font-black uppercase text-lg">{series.title}</h3>
+                            {series.isNew && <Badge variant="secondary">New</Badge>}
+                            {series.pillar && <Badge variant="outline">{series.pillar}</Badge>}
+                            {series.youtubeUrl && (
+                              <Badge variant="destructive" className="flex items-center gap-1">
+                                <Youtube className="w-3 h-3" />
+                                Video
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-muted-foreground">
+                            <div><span className="font-bold">Season:</span> {series.season}</div>
+                            <div><span className="font-bold">Premiere:</span> {series.premiereDate}</div>
+                            <div><span className="font-bold">Episodes:</span> {series.episodesAnnually || 'N/A'}</div>
+                          </div>
+                          {series.description && (
+                            <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{series.description}</p>
+                          )}
+                          {series.youtubeUrl && (
+                            <a 
+                              href={series.youtubeUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 mt-2 text-red-600 hover:text-red-700 text-sm font-medium"
+                            >
+                              <Youtube className="w-4 h-4" />
+                              Watch on YouTube
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <Button size="sm" variant="outline" onClick={() => editSeries(series)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => deleteItem(series.id, 'Series')}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-muted-foreground">
-                        <div><span className="font-bold">Season:</span> {series.season}</div>
-                        <div><span className="font-bold">Premiere:</span> {series.premiereDate}</div>
-                        <div><span className="font-bold">Episodes:</span> {series.episodesAnnually || 'N/A'}</div>
-                      </div>
-                      {series.description && (
-                        <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{series.description}</p>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => editSeries(series)}>
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => deleteItem(series.id, 'Series')}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -562,25 +756,54 @@ const Admin = () => {
             {activeSection === 'campaigns' && allCampaigns.filter(c => c.contentType === 'LatiNation Campaign' || c.contentType === 'Tentpole Campaign').map((campaign) => (
               <Card key={campaign.id} className="brutalist-card">
                 <CardContent className="p-4">
-                  <div className="flex justify-between items-start">
+                  <div className="flex flex-col lg:flex-row gap-4">
+                    {/* YouTube Preview if available */}
+                    {campaign.youtubeUrl && (
+                      <div className="lg:w-48 flex-shrink-0">
+                        <YouTubePreview url={campaign.youtubeUrl} />
+                      </div>
+                    )}
+                    
+                    {/* Content Details */}
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="font-black uppercase text-lg">{campaign.title}</h3>
-                        <Badge variant="outline">{campaign.contentType}</Badge>
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <h3 className="font-black uppercase text-lg">{campaign.title}</h3>
+                            <Badge variant="outline">{campaign.contentType}</Badge>
+                            {campaign.youtubeUrl && (
+                              <Badge variant="destructive" className="flex items-center gap-1">
+                                <Youtube className="w-3 h-3" />
+                                Video
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-muted-foreground mb-2">
+                            <div><span className="font-bold">Flight Dates:</span> {campaign.flightDates}</div>
+                            <div><span className="font-bold">Platforms:</span> {campaign.platforms}</div>
+                          </div>
+                          <p className="text-sm text-muted-foreground line-clamp-2">{campaign.overview}</p>
+                          {campaign.youtubeUrl && (
+                            <a 
+                              href={campaign.youtubeUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 mt-2 text-red-600 hover:text-red-700 text-sm font-medium"
+                            >
+                              <Youtube className="w-4 h-4" />
+                              Watch on YouTube
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <Button size="sm" variant="outline" onClick={() => editCampaign(campaign)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => deleteItem(campaign.id, 'Campaign')}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-muted-foreground mb-2">
-                        <div><span className="font-bold">Flight Dates:</span> {campaign.flightDates}</div>
-                        <div><span className="font-bold">Platforms:</span> {campaign.platforms}</div>
-                      </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2">{campaign.overview}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => editCampaign(campaign)}>
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => deleteItem(campaign.id, 'Campaign')}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -590,25 +813,54 @@ const Admin = () => {
             {activeSection === 'branded' && brandedCampaignsDatabase.map((campaign) => (
               <Card key={campaign.id} className="brutalist-card">
                 <CardContent className="p-4">
-                  <div className="flex justify-between items-start">
+                  <div className="flex flex-col lg:flex-row gap-4">
+                    {/* YouTube Preview if available */}
+                    {campaign.youtubeUrl && (
+                      <div className="lg:w-48 flex-shrink-0">
+                        <YouTubePreview url={campaign.youtubeUrl} />
+                      </div>
+                    )}
+                    
+                    {/* Content Details */}
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="font-black uppercase text-lg">{campaign.title}</h3>
-                        <Badge variant="outline">Branded Content</Badge>
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <h3 className="font-black uppercase text-lg">{campaign.title}</h3>
+                            <Badge variant="outline">Branded Content</Badge>
+                            {campaign.youtubeUrl && (
+                              <Badge variant="destructive" className="flex items-center gap-1">
+                                <Youtube className="w-3 h-3" />
+                                Video
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-muted-foreground mb-2">
+                            <div><span className="font-bold">Flight Dates:</span> {campaign.flightDates}</div>
+                            <div><span className="font-bold">Type:</span> {campaign.campaignType}</div>
+                          </div>
+                          <p className="text-sm text-muted-foreground line-clamp-2">{campaign.description}</p>
+                          {campaign.youtubeUrl && (
+                            <a 
+                              href={campaign.youtubeUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 mt-2 text-red-600 hover:text-red-700 text-sm font-medium"
+                            >
+                              <Youtube className="w-4 h-4" />
+                              Watch on YouTube
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <Button size="sm" variant="outline" onClick={() => editBrandedCampaign(campaign)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => deleteItem(campaign.id, 'Branded Campaign')}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-muted-foreground mb-2">
-                        <div><span className="font-bold">Flight Dates:</span> {campaign.flightDates}</div>
-                        <div><span className="font-bold">Type:</span> {campaign.campaignType}</div>
-                      </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2">{campaign.description}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => editBrandedCampaign(campaign)}>
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => deleteItem(campaign.id, 'Branded Campaign')}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
                     </div>
                   </div>
                 </CardContent>
